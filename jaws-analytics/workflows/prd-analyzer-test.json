@@ -1,0 +1,106 @@
+{
+  "name": "PRD Analyzer Test Wrapper",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analyze-prd",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "test-analyze-prd"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract prd_content from webhook body\nconst body = $json.body || $json;\nconst prdContent = body.prd_content || body.content || body.prd || '';\n\nif (!prdContent) {\n  return {\n    status: 400,\n    error: 'Missing required field: prd_content',\n    message: 'Request body must include prd_content field with PRD markdown text'\n  };\n}\n\nreturn {\n  prd_content: prdContent\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ \"PRD Analyzer\" }}",
+        "options": {}
+      },
+      "id": "execute-prd-analyzer",
+      "name": "Execute PRD Analyzer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Execute PRD Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute PRD Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

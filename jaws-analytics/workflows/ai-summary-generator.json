@@ -1,0 +1,168 @@
+{
+  "name": "AI Summary Generator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has required metrics\nconst projectName = $json.project_name || $json.projectName || '';\nconst workflowsCount = $json.workflows_count || $json.workflowsCount || 0;\nconst tablesCount = $json.tables_count || $json.tablesCount || 0;\nconst taskStats = $json.task_stats || $json.taskStats || {};\n\nif (!projectName) {\n  return {\n    status: 400,\n    error: 'Missing required field',\n    message: 'Input must include project_name'\n  };\n}\n\nreturn {\n  project_name: projectName,\n  workflows_count: workflowsCount,\n  tables_count: tablesCount,\n  task_stats: taskStats,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build system prompt for Claude\nconst systemPrompt = `You are a technical consultant writing summaries for software project dashboards.\n\nYour job is to take metrics about a software project and generate four different summaries:\n\n1. Executive Summary: 2-3 sentences explaining what the project does in business terms\n2. Technical Summary: A paragraph explaining the technical architecture and components\n3. Value Proposition: 3-4 bullet points about ROI and business benefits\n4. Architecture: Brief technical description suitable for diagram labels\n\nRespond ONLY with valid JSON in this exact format:\n{\n  \"executive_summary\": \"...\",\n  \"technical_summary\": \"...\",\n  \"value_proposition\": [\"...\", \"...\", \"...\"],\n  \"architecture_description\": \"...\"\n}`;\n\nreturn {\n  ...($json),\n  system_prompt: systemPrompt\n};"
+      },
+      "id": "build-system-prompt",
+      "name": "Build System Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build user prompt with project metrics\nconst projectName = $json.project_name;\nconst workflowsCount = $json.workflows_count;\nconst tablesCount = $json.tables_count;\nconst taskStats = $json.task_stats || {};\nconst tasksCompleted = taskStats.completed || 0;\nconst tasksTotal = taskStats.total || 0;\nconst completionRate = taskStats.completion_rate || 0;\n\nconst userPrompt = `Generate summaries for this project:\n\nProject: ${projectName}\nWorkflows: ${workflowsCount}\nDatabase Tables: ${tablesCount}\nTasks Completed: ${tasksCompleted}/${tasksTotal} (${completionRate}%)\n\nMake the executive summary compelling for clients.\nMake the technical summary detailed for developers.\nMake value proposition focused on ROI and business impact.\nMake architecture description suitable for diagram labels.`;\n\nreturn {\n  ...($json),\n  user_prompt: userPrompt\n};"
+      },
+      "id": "build-user-prompt",
+      "name": "Build User Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "contentType": "application/json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"system\": $json.system_prompt,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.user_prompt\n    }\n  ]\n}",
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryInterval": 1000
+          }
+        }
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract summary text from Claude response\nconst response = $json;\n\nif (!response.content || !response.content[0] || !response.content[0].text) {\n  return {\n    status: 400,\n    error: 'Invalid Claude response',\n    message: 'Claude API returned unexpected format'\n  };\n}\n\nconst summaryText = response.content[0].text;\n\n// Parse JSON from response\nlet summaryData;\ntry {\n  summaryData = JSON.parse(summaryText);\n} catch (e) {\n  // Try to extract JSON from markdown code blocks\n  const jsonMatch = summaryText.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (jsonMatch) {\n    try {\n      summaryData = JSON.parse(jsonMatch[1]);\n    } catch (e2) {\n      return {\n        status: 400,\n        error: 'Invalid JSON in response',\n        message: 'Claude returned non-JSON response: ' + summaryText.substring(0, 100)\n      };\n    }\n  } else {\n    return {\n      status: 400,\n      error: 'Invalid JSON in response',\n      message: 'Claude returned non-JSON response: ' + summaryText.substring(0, 100)\n    };\n  }\n}\n\nreturn {\n  ...($json),\n  summary_data: summaryData,\n  raw_response: summaryText\n};"
+      },
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response\nconst summaryData = $json.summary_data;\n\nreturn {\n  status: 200,\n  message: 'Summary generation complete',\n  data: {\n    project_name: $json.project_name,\n    summaries: {\n      executive_summary: summaryData.executive_summary || '',\n      technical_summary: summaryData.technical_summary || '',\n      value_proposition: summaryData.value_proposition || [],\n      architecture_description: summaryData.architecture_description || ''\n    },\n    metrics: {\n      workflows: $json.workflows_count,\n      tables: $json.tables_count\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Build System Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build System Prompt": {
+      "main": [
+        [
+          {
+            "node": "Build User Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build User Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

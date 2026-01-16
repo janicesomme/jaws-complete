@@ -1,0 +1,168 @@
+{
+  "name": "Architecture Diagram Generator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has workflow relationships\nconst workflows = $json.workflows || $json.workflow_relationships || [];\n\nif (!Array.isArray(workflows) || workflows.length === 0) {\n  return {\n    status: 400,\n    error: 'Missing required field',\n    message: 'Input must include workflows array with relationship data'\n  };\n}\n\nreturn {\n  workflows: workflows,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build system prompt for Claude Mermaid generation\nconst systemPrompt = `You are an expert at creating Mermaid flowchart diagrams for software architectures.\n\nYour job is to generate valid Mermaid flowchart syntax that shows:\n1. A main orchestrator workflow at the top\n2. Sub-workflows as nodes below\n3. Arrows showing data flow from orchestrator to sub-workflows\n4. Trigger types labeled on connections\n5. Grouped by functional area (Analytics, Summary, etc.)\n\nRespond ONLY with valid Mermaid flowchart syntax. No other text.\nStart with: graph TD\nUse descriptive node names and trigger types as labels.\nEnsure syntax is valid (no special characters in node IDs)`;"
+      },
+      "id": "build-system-prompt",
+      "name": "Build System Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build user prompt with workflow structure\nconst workflows = $json.workflows;\n\nlet workflowDescription = 'Generate a Mermaid flowchart for this workflow architecture:\\n\\n';\nworkflowDescription += 'Main Orchestrator: jaws-analytics-build\\n';\nworkflowDescription += 'Sub-workflows:\\n';\n\nconst uniqueWorkflows = new Set();\nconst relationships = [];\n\nworkflows.forEach((wf, idx) => {\n  if (wf.name || wf.workflow_name) {\n    const name = wf.name || wf.workflow_name;\n    uniqueWorkflows.add(name);\n    const trigger = wf.trigger_type || wf.triggerType || 'execute_workflow';\n    workflowDescription += `- ${name} (trigger: ${trigger})\\n`;\n    relationships.push(`${name} receives ${trigger} trigger`);\n  }\n});\n\nworkflowDescription += '\\nShow main orchestrator calling each sub-workflow with labeled connections.';\nworkflowDescription += '\\nGroup related workflows together visually.';\n\nreturn {\n  ...($json),\n  user_prompt: workflowDescription\n};"
+      },
+      "id": "build-user-prompt",
+      "name": "Build User Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "contentType": "application/json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"system\": $json.system_prompt,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.user_prompt\n    }\n  ]\n}",
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryInterval": 1000
+          }
+        }
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Mermaid syntax from Claude response\nconst response = $json;\n\nif (!response.content || !response.content[0] || !response.content[0].text) {\n  return {\n    status: 400,\n    error: 'Invalid Claude response',\n    message: 'Claude API returned unexpected format'\n  };\n}\n\nlet mermaidCode = response.content[0].text.trim();\n\n// Clean up markdown code blocks if present\nmermaidCode = mermaidCode.replace(/```mermaid\\n?/g, '').replace(/```\\n?/g, '').trim();\n\n// Validate it starts with \"graph\"\nif (!mermaidCode.startsWith('graph')) {\n  return {\n    status: 400,\n    error: 'Invalid Mermaid syntax',\n    message: 'Response does not start with \"graph\" keyword: ' + mermaidCode.substring(0, 50)\n  };\n}\n\nreturn {\n  ...($json),\n  mermaid_code: mermaidCode,\n  raw_response: response.content[0].text\n};"
+      },
+      "id": "parse-response",
+      "name": "Parse Mermaid Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response\nreturn {\n  status: 200,\n  message: 'Diagram generation complete',\n  data: {\n    diagram: {\n      type: 'mermaid',\n      syntax: $json.mermaid_code,\n      version: 'v11.4.0'\n    },\n    visualization_url: 'https://mermaid.live/edit#pako/...',\n    edit_url: 'Update with mermaid.live link once rendered'\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Build System Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build System Prompt": {
+      "main": [
+        [
+          {
+            "node": "Build User Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build User Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Mermaid Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Mermaid Response": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

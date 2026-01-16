@@ -1,0 +1,50 @@
+{
+  "name": "AI Summary Generator Test",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "webhook-test/generate-summary",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract summary generator input\nconst body = $json;\n\nreturn {\n  project_name: body.project_name || body.projectName || 'Unknown Project',\n  workflows_count: body.workflows_count || body.workflowsCount || 0,\n  tables_count: body.tables_count || body.tablesCount || 0,\n  task_stats: body.task_stats || body.taskStats || {}\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "{{ $env.AI_SUMMARY_GENERATOR_ID }}",
+        "source": "list"
+      },
+      "id": "execute-workflow",
+      "name": "Execute AI Summary Generator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "responseData": "={{ $json }}",
+        "responseCode": 200
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {}
+}

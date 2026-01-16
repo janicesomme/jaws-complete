@@ -1,0 +1,90 @@
+{
+  "name": "Supabase Storage Test",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "supabase-store",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "supabase-storage-test"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract input from webhook body\nconst body = $json.body || {};\n\nreturn {\n  prd_analysis: body.prd_analysis || body.prd || {},\n  state_analysis: body.state_analysis || body.state || {},\n  workflow_analysis: body.workflow_analysis || body.workflows || {},\n  tables_analysis: body.tables_analysis || body.tables || {},\n  token_analysis: body.token_analysis || body.tokens || {},\n  ai_summary: body.ai_summary || body.summary || {},\n  architecture_diagram: body.architecture_diagram || body.architecture || {},\n  dashboard_spec: body.dashboard_spec || {}\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.id }}",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "execute-supabase-storage",
+      "name": "Execute Supabase Storage",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Execute Supabase Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Supabase Storage": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}

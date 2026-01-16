@@ -1,0 +1,50 @@
+{
+  "name": "Token Estimator Test",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "webhook-test/estimate-tokens",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract token estimator input from request body\nconst body = $json;\n\nreturn {\n  system_prompt: body.system_prompt || body.systemPrompt || '',\n  user_template: body.user_template || body.userTemplate || body.user_prompt || '',\n  max_tokens: body.max_tokens || body.maxTokens || 1000,\n  dynamic_tokens: body.dynamic_tokens || body.dynamicTokens || 200\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "{{ $env.TOKEN_ESTIMATOR_ID }}",
+        "source": "list"
+      },
+      "id": "execute-workflow",
+      "name": "Execute Token Estimator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "responseData": "={{ $json }}",
+        "responseCode": 200
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {}
+}

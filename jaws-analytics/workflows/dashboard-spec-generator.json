@@ -1,0 +1,148 @@
+{
+  "name": "Dashboard Spec Generator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has all required analysis results\nconst prd = $json.prd_analysis || $json.prd || null;\nconst state = $json.state_analysis || $json.state || null;\nconst workflows = $json.workflow_analysis || $json.workflows || null;\nconst tokens = $json.token_analysis || $json.tokens || null;\nconst summary = $json.ai_summary || $json.summary || null;\nconst architecture = $json.architecture_diagram || $json.architecture || null;\nconst buildPath = $json.build_path || '';\n\nif (!prd || !state || !summary) {\n  return {\n    status: 400,\n    error: 'Missing required fields',\n    message: 'Input must include prd_analysis, state_analysis, and ai_summary'\n  };\n}\n\nreturn {\n  prd_data: prd,\n  state_data: state,\n  workflows_data: workflows || [],\n  tokens_data: tokens || {},\n  summary_data: summary,\n  architecture_data: architecture || '',\n  build_path: buildPath,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract header info\nconst prd = $json.prd_data;\nconst state = $json.state_data;\n\nconst projectName = prd.data?.project_name || state.data?.project?.name || 'Unknown Project';\nconst clientName = prd.data?.client_name || 'Unknown Client';\nconst buildDate = new Date().toISOString();\nconst buildDuration = state.data?.build?.duration_formatted || 'Unknown';\n\nreturn {\n  ...($json),\n  header: {\n    project_name: projectName,\n    client_name: clientName,\n    build_date: buildDate,\n    build_duration: buildDuration\n  }\n};"
+      },
+      "id": "extract-header",
+      "name": "Extract Header Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate stats cards array\nconst prd = $json.prd_data;\nconst state = $json.state_data;\nconst workflows = $json.workflows_data;\nconst tokens = $json.tokens_data;\n\n// Extract counts\nconst workflowsCount = Array.isArray(workflows) && workflows.data ? workflows.data.length : 0;\nconst tablesCount = prd.data?.tables_count || 0;\nconst totalTasks = prd.data?.total_tasks || 0;\nconst completedTasks = prd.data?.tasks_completed || state.data?.tasks?.completed?.count || 0;\nconst completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;\nconst estimatedTokensPerRun = tokens.data?.total_tokens || 0;\nconst estimatedMonthlyCost = tokens.data?.monthly_cost || 0;\n\nconst statsCards = [\n  {\n    value: workflowsCount,\n    label: 'Workflows Created',\n    icon: 'GitBranch',\n    trend: null\n  },\n  {\n    value: tablesCount,\n    label: 'Database Tables',\n    icon: 'Database',\n    trend: null\n  },\n  {\n    value: estimatedTokensPerRun.toLocaleString(),\n    label: 'Est. Tokens/Run',\n    icon: 'Cpu',\n    trend: null\n  },\n  {\n    value: `${completionRate}%`,\n    label: 'Completion Rate',\n    icon: 'CheckCircle',\n    trend: completionRate >= 90 ? 'up' : completionRate >= 70 ? 'stable' : 'down'\n  },\n  {\n    value: `$${estimatedMonthlyCost.toFixed(2)}`,\n    label: 'Est. Monthly Cost',\n    icon: 'DollarSign',\n    trend: null\n  },\n  {\n    value: state.data?.iterations?.current || 0,\n    label: 'Iterations Used',\n    icon: 'RotateCw',\n    trend: null\n  }\n];\n\nreturn {\n  ...($json),\n  stats_cards: statsCards\n};"
+      },
+      "id": "generate-stats-cards",
+      "name": "Generate Stats Cards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate workflow breakdown table data\nconst workflows = $json.workflows_data;\n\nif (!workflows || !workflows.data || !Array.isArray(workflows.data)) {\n  return {\n    ...($json),\n    workflow_breakdown: []\n  };\n}\n\nconst workflowBreakdown = workflows.data.map(wf => ({\n  name: wf.workflow_name || wf.name || 'Unknown',\n  type: wf.workflow_type || 'sub-workflow',\n  trigger: wf.trigger_type || 'execute',\n  nodes: wf.node_count || 0,\n  claude_nodes: wf.claude_nodes || 0,\n  supabase_nodes: wf.supabase_nodes || 0,\n  estimated_tokens: wf.estimated_tokens || 0,\n  purpose: wf.purpose || 'No description available',\n  nodes_breakdown: wf.nodes_breakdown || {}\n}));\n\nreturn {\n  ...($json),\n  workflow_breakdown: workflowBreakdown\n};"
+      },
+      "id": "generate-workflow-breakdown",
+      "name": "Generate Workflow Breakdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate token usage pie chart data\nconst workflows = $json.workflows_data;\n\nif (!workflows || !workflows.data || !Array.isArray(workflows.data)) {\n  return {\n    ...($json),\n    token_usage_chart: []\n  };\n}\n\nconst tokenUsageChart = workflows.data\n  .filter(wf => (wf.estimated_tokens || 0) > 0)\n  .map(wf => ({\n    name: wf.workflow_name || wf.name || 'Unknown',\n    value: wf.estimated_tokens || 0,\n    percentage: 0 // Will be calculated below\n  }));\n\n// Calculate percentages\nconst totalTokens = tokenUsageChart.reduce((sum, item) => sum + item.value, 0);\nif (totalTokens > 0) {\n  tokenUsageChart.forEach(item => {\n    item.percentage = Math.round((item.value / totalTokens) * 100);\n  });\n}\n\nreturn {\n  ...($json),\n  token_usage_chart: tokenUsageChart\n};"
+      },
+      "id": "generate-token-chart",
+      "name": "Generate Token Usage Chart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate build timeline data\nconst state = $json.state_data;\nconst prd = $json.prd_data;\n\nconst phases = prd.data?.phases || [];\nconst currentIteration = state.data?.iterations?.current || 0;\nconst checkpoints = state.data?.checkpoints?.total || 0;\nconst failedTasks = state.data?.tasks?.failed?.count || 0;\n\nconst timeline = {\n  total_iterations: currentIteration,\n  total_checkpoints: checkpoints,\n  total_failures: failedTasks,\n  phases: phases.map((phase, index) => ({\n    phase_number: phase.phase_number || index + 1,\n    phase_name: phase.phase_name || `Phase ${index + 1}`,\n    checkpoint_name: phase.checkpoint_name || 'Unknown',\n    status: phase.status || 'unknown'\n  })),\n  checkpoints_history: state.data?.checkpoints?.history || [],\n  rabbit_holes: state.data?.failures?.rabbit_holes || []\n};\n\nreturn {\n  ...($json),\n  build_timeline: timeline\n};"
+      },
+      "id": "generate-timeline",
+      "name": "Generate Build Timeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract summaries\nconst summary = $json.summary_data;\nconst architecture = $json.architecture_data;\n\nconst summaries = {\n  executive: summary.data?.executive_summary || 'No executive summary available',\n  technical: summary.data?.technical_summary || 'No technical summary available',\n  value: summary.data?.value_proposition || 'No value proposition available',\n  architecture_description: summary.data?.architecture_description || 'System architecture'\n};\n\nconst architectureMermaid = typeof architecture === 'string' ? architecture : (architecture.data?.mermaid_code || '');\n\nreturn {\n  ...($json),\n  summaries: summaries,\n  architecture_mermaid: architectureMermaid\n};"
+      },
+      "id": "extract-summaries",
+      "name": "Extract Summaries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build complete dashboard spec\nconst dashboardSpec = {\n  version: '1.0',\n  generated_at: new Date().toISOString(),\n  header: $json.header,\n  stats_cards: $json.stats_cards,\n  workflow_breakdown: $json.workflow_breakdown,\n  token_usage_chart: $json.token_usage_chart,\n  build_timeline: $json.build_timeline,\n  architecture_mermaid: $json.architecture_mermaid,\n  summaries: $json.summaries\n};\n\nreturn {\n  ...($json),\n  dashboard_spec: dashboardSpec\n};"
+      },
+      "id": "build-dashboard-spec",
+      "name": "Build Dashboard Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save dashboard spec to file\nconst fs = require('fs');\nconst path = require('path');\n\nconst dashboardSpec = $json.dashboard_spec;\nconst buildPath = $json.build_path || '.';\n\n// Determine output path\nconst outputPath = path.join(buildPath, 'dashboard-spec.json');\n\ntry {\n  // Write the spec to file\n  fs.writeFileSync(outputPath, JSON.stringify(dashboardSpec, null, 2), 'utf8');\n  \n  return {\n    ...($json),\n    file_saved: true,\n    file_path: outputPath,\n    file_size: JSON.stringify(dashboardSpec).length\n  };\n} catch (error) {\n  return {\n    ...($json),\n    file_saved: false,\n    file_error: error.message\n  };\n}"
+      },
+      "id": "save-to-file",
+      "name": "Save to File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final response\nreturn {\n  status: 200,\n  message: 'Dashboard spec generated successfully',\n  data: {\n    dashboard_spec: $json.dashboard_spec,\n    file_saved: $json.file_saved || false,\n    file_path: $json.file_path || null,\n    file_size_bytes: $json.file_size || 0,\n    stats: {\n      stats_cards_count: $json.stats_cards.length,\n      workflows_count: $json.workflow_breakdown.length,\n      token_chart_items: $json.token_usage_chart.length,\n      phases_count: $json.build_timeline.phases.length\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{"node": "Validate Input", "type": "main", "index": 0}]]
+    },
+    "Validate Input": {
+      "main": [[{"node": "Extract Header Info", "type": "main", "index": 0}]]
+    },
+    "Extract Header Info": {
+      "main": [[{"node": "Generate Stats Cards", "type": "main", "index": 0}]]
+    },
+    "Generate Stats Cards": {
+      "main": [[{"node": "Generate Workflow Breakdown", "type": "main", "index": 0}]]
+    },
+    "Generate Workflow Breakdown": {
+      "main": [[{"node": "Generate Token Usage Chart", "type": "main", "index": 0}]]
+    },
+    "Generate Token Usage Chart": {
+      "main": [[{"node": "Generate Build Timeline", "type": "main", "index": 0}]]
+    },
+    "Generate Build Timeline": {
+      "main": [[{"node": "Extract Summaries", "type": "main", "index": 0}]]
+    },
+    "Extract Summaries": {
+      "main": [[{"node": "Build Dashboard Spec", "type": "main", "index": 0}]]
+    },
+    "Build Dashboard Spec": {
+      "main": [[{"node": "Save to File", "type": "main", "index": 0}]]
+    },
+    "Save to File": {
+      "main": [[{"node": "Build Response", "type": "main", "index": 0}]]
+    }
+  }
+}

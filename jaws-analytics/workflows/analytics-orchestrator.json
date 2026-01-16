@@ -1,0 +1,730 @@
+{
+  "name": "Analytics Orchestrator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analyze-build",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "analyze-build-main"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming webhook data\nconst body = $input.item.json.body || {};\nconst buildPath = body.build_path;\nconst projectName = body.project_name;\nconst clientName = body.client_name;\n\nif (!buildPath) {\n  return {\n    status: 400,\n    error: 'Missing required field: build_path',\n    message: 'POST body must include { \"build_path\": \"/path/to/project\", \"project_name\": \"\", \"client_name\": \"\" }'\n  };\n}\n\n// Normalize path (handle Windows/Linux)\nconst normalizedPath = buildPath.replace(/\\\\/g, '/');\n\nreturn {\n  build_path: buildPath,\n  normalized_path: normalizedPath,\n  project_name: projectName || 'Unknown Project',\n  client_name: clientName || 'Unknown Client',\n  errors: [],\n  warnings: []\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.error}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{{\n  \"status\": $json.status || 400,\n  \"error\": $json.error,\n  \"message\": $json.message\n}}}",
+        "options": {
+          "responseCode": "={{$json.status || 400}}"
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Call Build Artifact Reader workflow\nconst data = $input.item.json;\n\ntry {\n  // Prepare input for Build Artifact Reader\n  return {\n    ...data,\n    step: 'build_artifact_reader',\n    step_input: {\n      build_path: data.build_path\n    }\n  };\n} catch (error) {\n  return {\n    ...data,\n    errors: [...(data.errors || []), {\n      step: 'build_artifact_reader',\n      error: error.message\n    }]\n  };\n}"
+      },
+      "id": "prepare-artifact-reader",
+      "name": "Prepare Artifact Reader",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Build Artifact Reader\").id }}",
+        "options": {}
+      },
+      "id": "call-artifact-reader",
+      "name": "Call Artifact Reader",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1040, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Build Artifact Reader results\nconst previousData = $('Prepare Artifact Reader').item.json;\nconst result = $input.item.json;\n\n// Check if workflow succeeded\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    artifacts: null,\n    errors: [...(previousData.errors || []), {\n      step: 'build_artifact_reader',\n      error: result?.error || 'Failed to read build artifacts'\n    }],\n    warnings: [...(previousData.warnings || []), 'Continuing without artifacts']\n  };\n}\n\nreturn {\n  ...previousData,\n  artifacts: result,\n  prd_content: result.prd_content,\n  state_content: result.state_content,\n  workflows_content: result.workflows || []\n};"
+      },
+      "id": "process-artifact-result",
+      "name": "Process Artifact Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare PRD Analyzer input\nconst data = $input.item.json;\n\nif (!data.prd_content) {\n  return {\n    ...data,\n    prd_analysis: null,\n    warnings: [...(data.warnings || []), 'Skipping PRD analysis - no PRD content']\n  };\n}\n\nreturn {\n  ...data,\n  step: 'prd_analyzer',\n  step_input: {\n    prd_content: data.prd_content\n  }\n};"
+      },
+      "id": "prepare-prd-analyzer",
+      "name": "Prepare PRD Analyzer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"PRD Analyzer\").id }}",
+        "options": {}
+      },
+      "id": "call-prd-analyzer",
+      "name": "Call PRD Analyzer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1640, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process PRD Analyzer results\nconst previousData = $('Prepare PRD Analyzer').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    prd_analysis: null,\n    errors: [...(previousData.errors || []), {\n      step: 'prd_analyzer',\n      error: result?.error || 'Failed to analyze PRD'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  prd_analysis: result\n};"
+      },
+      "id": "process-prd-result",
+      "name": "Process PRD Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare State Analyzer input\nconst data = $input.item.json;\n\nif (!data.state_content) {\n  return {\n    ...data,\n    state_analysis: null,\n    warnings: [...(data.warnings || []), 'Skipping state analysis - no state file']\n  };\n}\n\nreturn {\n  ...data,\n  step: 'state_analyzer',\n  step_input: {\n    state_content: data.state_content\n  }\n};"
+      },
+      "id": "prepare-state-analyzer",
+      "name": "Prepare State Analyzer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"State Analyzer\").id }}",
+        "options": {}
+      },
+      "id": "call-state-analyzer",
+      "name": "Call State Analyzer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2240, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process State Analyzer results\nconst previousData = $('Prepare State Analyzer').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    state_analysis: null,\n    errors: [...(previousData.errors || []), {\n      step: 'state_analyzer',\n      error: result?.error || 'Failed to analyze state'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  state_analysis: result\n};"
+      },
+      "id": "process-state-result",
+      "name": "Process State Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Workflow Analyzer input\nconst data = $input.item.json;\n\nif (!data.workflows_content || data.workflows_content.length === 0) {\n  return {\n    ...data,\n    workflow_analysis: null,\n    warnings: [...(data.warnings || []), 'Skipping workflow analysis - no workflows']\n  };\n}\n\nreturn {\n  ...data,\n  step: 'workflow_analyzer',\n  step_input: {\n    workflows: data.workflows_content\n  }\n};"
+      },
+      "id": "prepare-workflow-analyzer",
+      "name": "Prepare Workflow Analyzer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Workflow Analyzer\").id }}",
+        "options": {}
+      },
+      "id": "call-workflow-analyzer",
+      "name": "Call Workflow Analyzer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2840, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Workflow Analyzer results\nconst previousData = $('Prepare Workflow Analyzer').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    workflow_analysis: null,\n    errors: [...(previousData.errors || []), {\n      step: 'workflow_analyzer',\n      error: result?.error || 'Failed to analyze workflows'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  workflow_analysis: result\n};"
+      },
+      "id": "process-workflow-result",
+      "name": "Process Workflow Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3040, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Token Estimator input\nconst data = $input.item.json;\n\nif (!data.workflow_analysis || !data.workflow_analysis.data) {\n  return {\n    ...data,\n    token_analysis: null,\n    warnings: [...(data.warnings || []), 'Skipping token estimation - no workflow data']\n  };\n}\n\nreturn {\n  ...data,\n  step: 'token_estimator',\n  step_input: {\n    workflows: data.workflow_analysis.data\n  }\n};"
+      },
+      "id": "prepare-token-estimator",
+      "name": "Prepare Token Estimator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3240, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Token Estimator\").id }}",
+        "options": {}
+      },
+      "id": "call-token-estimator",
+      "name": "Call Token Estimator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [3440, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Token Estimator results\nconst previousData = $('Prepare Token Estimator').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    token_analysis: null,\n    errors: [...(previousData.errors || []), {\n      step: 'token_estimator',\n      error: result?.error || 'Failed to estimate tokens'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  token_analysis: result\n};"
+      },
+      "id": "process-token-result",
+      "name": "Process Token Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3640, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare AI Summary Generator input\nconst data = $input.item.json;\n\n// Gather all available metrics for summary\nconst metrics = {\n  project_name: data.project_name,\n  client_name: data.client_name,\n  prd_analysis: data.prd_analysis?.data || null,\n  state_analysis: data.state_analysis?.data || null,\n  workflow_analysis: data.workflow_analysis?.data || null,\n  token_analysis: data.token_analysis?.data || null\n};\n\nreturn {\n  ...data,\n  step: 'ai_summary_generator',\n  step_input: metrics\n};"
+      },
+      "id": "prepare-ai-summary",
+      "name": "Prepare AI Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3840, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"AI Summary Generator\").id }}",
+        "options": {}
+      },
+      "id": "call-ai-summary",
+      "name": "Call AI Summary",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [4040, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI Summary results\nconst previousData = $('Prepare AI Summary').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    ai_summary: null,\n    errors: [...(previousData.errors || []), {\n      step: 'ai_summary_generator',\n      error: result?.error || 'Failed to generate AI summary'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  ai_summary: result\n};"
+      },
+      "id": "process-ai-summary-result",
+      "name": "Process AI Summary Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4240, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Architecture Diagram Generator input\nconst data = $input.item.json;\n\nif (!data.workflow_analysis || !data.workflow_analysis.data) {\n  return {\n    ...data,\n    architecture_diagram: null,\n    warnings: [...(data.warnings || []), 'Skipping architecture diagram - no workflow data']\n  };\n}\n\nreturn {\n  ...data,\n  step: 'architecture_diagram_generator',\n  step_input: {\n    workflows: data.workflow_analysis.data\n  }\n};"
+      },
+      "id": "prepare-architecture-diagram",
+      "name": "Prepare Architecture Diagram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4440, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Architecture Diagram Generator\").id }}",
+        "options": {}
+      },
+      "id": "call-architecture-diagram",
+      "name": "Call Architecture Diagram",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [4640, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Architecture Diagram results\nconst previousData = $('Prepare Architecture Diagram').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    architecture_diagram: null,\n    errors: [...(previousData.errors || []), {\n      step: 'architecture_diagram_generator',\n      error: result?.error || 'Failed to generate architecture diagram'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  architecture_diagram: result\n};"
+      },
+      "id": "process-architecture-result",
+      "name": "Process Architecture Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4840, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Dashboard Spec Generator input\nconst data = $input.item.json;\n\nconst dashboardInput = {\n  project_name: data.project_name,\n  client_name: data.client_name,\n  prd_analysis: data.prd_analysis,\n  state_analysis: data.state_analysis,\n  workflow_analysis: data.workflow_analysis,\n  token_analysis: data.token_analysis,\n  ai_summary: data.ai_summary,\n  architecture_diagram: data.architecture_diagram\n};\n\nreturn {\n  ...data,\n  step: 'dashboard_spec_generator',\n  step_input: dashboardInput\n};"
+      },
+      "id": "prepare-dashboard-spec",
+      "name": "Prepare Dashboard Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5040, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Dashboard Spec Generator\").id }}",
+        "options": {}
+      },
+      "id": "call-dashboard-spec",
+      "name": "Call Dashboard Spec",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [5240, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Dashboard Spec results\nconst previousData = $('Prepare Dashboard Spec').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    dashboard_spec: null,\n    errors: [...(previousData.errors || []), {\n      step: 'dashboard_spec_generator',\n      error: result?.error || 'Failed to generate dashboard spec'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  dashboard_spec: result\n};"
+      },
+      "id": "process-dashboard-spec-result",
+      "name": "Process Dashboard Spec Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5440, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Supabase Storage input\nconst data = $input.item.json;\n\nconst storageInput = {\n  project_name: data.project_name,\n  client_name: data.client_name,\n  prd_data: data.prd_analysis,\n  state_data: data.state_analysis,\n  workflows_data: data.workflow_analysis,\n  token_data: data.token_analysis,\n  summary_data: data.ai_summary,\n  diagram_data: data.architecture_diagram,\n  dashboard_spec: data.dashboard_spec\n};\n\nreturn {\n  ...data,\n  step: 'supabase_storage',\n  step_input: storageInput\n};"
+      },
+      "id": "prepare-supabase-storage",
+      "name": "Prepare Supabase Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5640, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow(\"Supabase Storage\").id }}",
+        "options": {}
+      },
+      "id": "call-supabase-storage",
+      "name": "Call Supabase Storage",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [5840, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Supabase Storage results\nconst previousData = $('Prepare Supabase Storage').item.json;\nconst result = $input.item.json;\n\nif (!result || result.status === 400) {\n  return {\n    ...previousData,\n    storage_result: null,\n    errors: [...(previousData.errors || []), {\n      step: 'supabase_storage',\n      error: result?.error || 'Failed to store in Supabase'\n    }]\n  };\n}\n\nreturn {\n  ...previousData,\n  storage_result: result\n};"
+      },
+      "id": "process-storage-result",
+      "name": "Process Storage Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [6040, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final response\nconst data = $input.item.json;\n\n// Count successes and failures\nconst steps = [\n  'build_artifact_reader',\n  'prd_analyzer',\n  'state_analyzer',\n  'workflow_analyzer',\n  'token_estimator',\n  'ai_summary_generator',\n  'architecture_diagram_generator',\n  'dashboard_spec_generator',\n  'supabase_storage'\n];\n\nconst successCount = steps.filter(step => {\n  const resultKey = step.replace('_generator', '').replace('build_artifact_reader', 'artifacts');\n  return data[resultKey] !== null && data[resultKey] !== undefined;\n}).length;\n\nconst failureCount = data.errors.length;\nconst warningCount = data.warnings.length;\n\n// Determine overall status\nconst hasErrors = failureCount > 0;\nconst status = hasErrors ? 'partial_success' : 'success';\nconst statusCode = hasErrors ? 207 : 200; // 207 = Multi-Status\n\nreturn {\n  status: statusCode,\n  result: status,\n  project_name: data.project_name,\n  client_name: data.client_name,\n  summary: {\n    steps_total: steps.length,\n    steps_succeeded: successCount,\n    steps_failed: failureCount,\n    warnings: warningCount\n  },\n  dashboard_spec: data.dashboard_spec?.data || null,\n  storage: data.storage_result?.data || null,\n  errors: data.errors,\n  warnings: data.warnings,\n  message: hasErrors \n    ? `Analysis completed with ${failureCount} failures and ${warningCount} warnings`\n    : 'Analysis completed successfully'\n};"
+      },
+      "id": "build-final-response",
+      "name": "Build Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [6240, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.status }}"
+        }
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [6440, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Artifact Reader",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Artifact Reader": {
+      "main": [
+        [
+          {
+            "node": "Call Artifact Reader",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Artifact Reader": {
+      "main": [
+        [
+          {
+            "node": "Process Artifact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Artifact Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare PRD Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare PRD Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Call PRD Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call PRD Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Process PRD Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process PRD Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare State Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare State Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Call State Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call State Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Process State Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process State Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Workflow Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Workflow Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Call Workflow Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Workflow Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Process Workflow Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Workflow Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Token Estimator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Token Estimator": {
+      "main": [
+        [
+          {
+            "node": "Call Token Estimator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Token Estimator": {
+      "main": [
+        [
+          {
+            "node": "Process Token Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Token Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Summary": {
+      "main": [
+        [
+          {
+            "node": "Call AI Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call AI Summary": {
+      "main": [
+        [
+          {
+            "node": "Process AI Summary Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Summary Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Architecture Diagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Architecture Diagram": {
+      "main": [
+        [
+          {
+            "node": "Call Architecture Diagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Architecture Diagram": {
+      "main": [
+        [
+          {
+            "node": "Process Architecture Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Architecture Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dashboard Spec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dashboard Spec": {
+      "main": [
+        [
+          {
+            "node": "Call Dashboard Spec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Dashboard Spec": {
+      "main": [
+        [
+          {
+            "node": "Process Dashboard Spec Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Dashboard Spec Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Supabase Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Supabase Storage": {
+      "main": [
+        [
+          {
+            "node": "Call Supabase Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Supabase Storage": {
+      "main": [
+        [
+          {
+            "node": "Process Storage Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Storage Result": {
+      "main": [
+        [
+          {
+            "node": "Build Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Final Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

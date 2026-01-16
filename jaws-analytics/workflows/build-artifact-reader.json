@@ -1,0 +1,330 @@
+{
+  "name": "Build Artifact Reader",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analyze-build",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "analyze-build"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming webhook data\nconst body = $input.item.json.body || {};\nconst buildPath = body.build_path;\n\nif (!buildPath) {\n  return {\n    status: 400,\n    error: 'Missing required field: build_path',\n    message: 'POST body must include { \"build_path\": \"/path/to/project\" }'\n  };\n}\n\n// Normalize path (handle Windows/Linux)\nconst normalizedPath = buildPath.replace(/\\\\/g, '/');\n\nreturn {\n  build_path: buildPath,\n  normalized_path: normalizedPath,\n  project_name: body.project_name || null,\n  client_name: body.client_name || null\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.error}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{{\n  \"status\": $json.status || 400,\n  \"error\": $json.error,\n  \"message\": $json.message\n}}}",
+        "options": {
+          "responseCode": "={{$json.status || 400}}"
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read PRD.md file\nconst fs = require('fs');\nconst path = require('path');\n\nconst buildPath = $json.build_path;\nconst prdPath = path.join(buildPath, 'PRD.md');\n\ntry {\n  if (fs.existsSync(prdPath)) {\n    const prdContent = fs.readFileSync(prdPath, 'utf8');\n    return {\n      ...($json),\n      prd_content: prdContent,\n      prd_found: true\n    };\n  } else {\n    return {\n      ...($json),\n      prd_content: null,\n      prd_found: false,\n      missing_files: ['PRD.md']\n    };\n  }\n} catch (error) {\n  return {\n    ...($json),\n    prd_content: null,\n    prd_found: false,\n    prd_error: error.message,\n    missing_files: ['PRD.md']\n  };\n}"
+      },
+      "id": "read-prd",
+      "name": "Read PRD.md",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read progress.txt file\nconst fs = require('fs');\nconst path = require('path');\n\nconst buildPath = $json.build_path;\nconst progressPath = path.join(buildPath, 'progress.txt');\nconst missingFiles = $json.missing_files || [];\n\ntry {\n  if (fs.existsSync(progressPath)) {\n    const progressContent = fs.readFileSync(progressPath, 'utf8');\n    return {\n      ...($json),\n      progress_content: progressContent,\n      progress_found: true\n    };\n  } else {\n    return {\n      ...($json),\n      progress_content: null,\n      progress_found: false,\n      missing_files: [...missingFiles, 'progress.txt']\n    };\n  }\n} catch (error) {\n  return {\n    ...($json),\n    progress_content: null,\n    progress_found: false,\n    progress_error: error.message,\n    missing_files: [...missingFiles, 'progress.txt']\n  };\n}"
+      },
+      "id": "read-progress",
+      "name": "Read progress.txt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read ralph-state.json file\nconst fs = require('fs');\nconst path = require('path');\n\nconst buildPath = $json.build_path;\nconst statePath = path.join(buildPath, 'ralph-state.json');\nconst missingFiles = $json.missing_files || [];\n\ntry {\n  if (fs.existsSync(statePath)) {\n    const stateContent = fs.readFileSync(statePath, 'utf8');\n    const stateJson = JSON.parse(stateContent);\n    return {\n      ...($json),\n      state_content: stateJson,\n      state_found: true\n    };\n  } else {\n    return {\n      ...($json),\n      state_content: null,\n      state_found: false,\n      missing_files: [...missingFiles, 'ralph-state.json']\n    };\n  }\n} catch (error) {\n  return {\n    ...($json),\n    state_content: null,\n    state_found: false,\n    state_error: error.message,\n    missing_files: [...missingFiles, 'ralph-state.json']\n  };\n}"
+      },
+      "id": "read-state",
+      "name": "Read ralph-state.json",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read AGENTS.md file (optional)\nconst fs = require('fs');\nconst path = require('path');\n\nconst buildPath = $json.build_path;\nconst agentsPath = path.join(buildPath, 'AGENTS.md');\n\ntry {\n  if (fs.existsSync(agentsPath)) {\n    const agentsContent = fs.readFileSync(agentsPath, 'utf8');\n    return {\n      ...($json),\n      agents_content: agentsContent,\n      agents_found: true\n    };\n  } else {\n    // AGENTS.md is optional, don't add to missing_files\n    return {\n      ...($json),\n      agents_content: null,\n      agents_found: false\n    };\n  }\n} catch (error) {\n  return {\n    ...($json),\n    agents_content: null,\n    agents_found: false,\n    agents_error: error.message\n  };\n}"
+      },
+      "id": "read-agents",
+      "name": "Read AGENTS.md",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Find and read all workflow JSON files\nconst fs = require('fs');\nconst path = require('path');\n\nconst buildPath = $json.build_path;\nconst workflowsDir = path.join(buildPath, 'workflows');\nconst workflows = [];\n\ntry {\n  if (fs.existsSync(workflowsDir) && fs.statSync(workflowsDir).isDirectory()) {\n    const files = fs.readdirSync(workflowsDir);\n    const jsonFiles = files.filter(f => f.endsWith('.json'));\n    \n    for (const file of jsonFiles) {\n      try {\n        const filePath = path.join(workflowsDir, file);\n        const content = fs.readFileSync(filePath, 'utf8');\n        const workflowJson = JSON.parse(content);\n        workflows.push({\n          filename: file,\n          content: workflowJson\n        });\n      } catch (parseError) {\n        workflows.push({\n          filename: file,\n          error: `Failed to parse: ${parseError.message}`,\n          content: null\n        });\n      }\n    }\n    \n    return {\n      ...($json),\n      workflows: workflows,\n      workflows_count: workflows.length,\n      workflows_found: true\n    };\n  } else {\n    // workflows directory is optional (for non-n8n projects)\n    return {\n      ...($json),\n      workflows: [],\n      workflows_count: 0,\n      workflows_found: false\n    };\n  }\n} catch (error) {\n  return {\n    ...($json),\n    workflows: [],\n    workflows_count: 0,\n    workflows_found: false,\n    workflows_error: error.message\n  };\n}"
+      },
+      "id": "read-workflows",
+      "name": "Read Workflows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.prd_found}}",
+              "value2": "true"
+            },
+            {
+              "value1": "={{$json.progress_found}}",
+              "value2": "true"
+            },
+            {
+              "value1": "={{$json.state_found}}",
+              "value2": "true"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "check-required-files",
+      "name": "Check Required Files",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1840, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return error for missing required files\nconst missingFiles = $json.missing_files || [];\n\nreturn {\n  status: 400,\n  error: 'Required files missing',\n  message: `The following required files were not found: ${missingFiles.join(', ')}`,\n  missing_files: missingFiles,\n  build_path: $json.build_path\n};"
+      },
+      "id": "missing-files-error",
+      "name": "Missing Files Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {
+          "responseCode": "={{$json.status || 400}}"
+        }
+      },
+      "id": "missing-files-response",
+      "name": "Missing Files Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build successful response with all parsed artifacts\nreturn {\n  status: 200,\n  message: 'Build artifacts successfully read',\n  data: {\n    build_path: $json.build_path,\n    project_name: $json.project_name,\n    client_name: $json.client_name,\n    artifacts: {\n      prd: {\n        found: $json.prd_found,\n        content: $json.prd_content\n      },\n      progress: {\n        found: $json.progress_found,\n        content: $json.progress_content\n      },\n      state: {\n        found: $json.state_found,\n        content: $json.state_content\n      },\n      agents: {\n        found: $json.agents_found,\n        content: $json.agents_content\n      },\n      workflows: {\n        found: $json.workflows_found,\n        count: $json.workflows_count,\n        files: $json.workflows\n      }\n    }\n  }\n};"
+      },
+      "id": "build-success-response",
+      "name": "Build Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {
+          "responseCode": "200"
+        }
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2240, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read PRD.md",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read PRD.md": {
+      "main": [
+        [
+          {
+            "node": "Read progress.txt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read progress.txt": {
+      "main": [
+        [
+          {
+            "node": "Read ralph-state.json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read ralph-state.json": {
+      "main": [
+        [
+          {
+            "node": "Read AGENTS.md",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read AGENTS.md": {
+      "main": [
+        [
+          {
+            "node": "Read Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Workflows": {
+      "main": [
+        [
+          {
+            "node": "Check Required Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Required Files": {
+      "main": [
+        [
+          {
+            "node": "Missing Files Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Missing Files Error": {
+      "main": [
+        [
+          {
+            "node": "Missing Files Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

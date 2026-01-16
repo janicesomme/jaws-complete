@@ -1,0 +1,77 @@
+{
+  "name": "Token Estimator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has required fields\nconst systemPrompt = $json.system_prompt || $json.systemPrompt || '';\nconst userTemplate = $json.user_template || $json.userTemplate || $json.user_prompt || '';\nconst maxTokens = $json.max_tokens || $json.maxTokens || 1000;\nconst dynamicTokens = $json.dynamic_tokens || $json.dynamicTokens || 200;\n\nif (!systemPrompt && !userTemplate) {\n  return {\n    status: 400,\n    error: 'Missing required fields',\n    message: 'Input must include system_prompt and/or user_template'\n  };\n}\n\nreturn {\n  system_prompt: systemPrompt,\n  user_template: userTemplate,\n  max_tokens: maxTokens,\n  dynamic_tokens: dynamicTokens,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Estimate tokens from system prompt\n// Approximation: ~4 characters = 1 token\nconst systemPrompt = $json.system_prompt || '';\nconst systemPromptLen = systemPrompt.length;\nconst systemTokens = Math.ceil(systemPromptLen / 4);\n\nreturn {\n  ...($json),\n  system_prompt_chars: systemPromptLen,\n  system_prompt_tokens: systemTokens\n};"
+      },
+      "id": "estimate-system-tokens",
+      "name": "Estimate System Prompt Tokens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Estimate tokens from user template\n// Remove placeholders ({{variable}}) and count characters\nconst userTemplate = $json.user_template || '';\n\n// Remove template placeholders to get base length\nconst cleanedTemplate = userTemplate.replace(/\\{\\{[^}]+\\}\\}/g, '');\nconst baseTokens = Math.ceil(cleanedTemplate.length / 4);\n\n// Add estimated tokens for dynamic content\nconst dynamicTokens = $json.dynamic_tokens || 200;\nconst totalUserTokens = baseTokens + dynamicTokens;\n\nreturn {\n  ...($json),\n  user_template_chars: cleanedTemplate.length,\n  user_template_base_tokens: baseTokens,\n  user_template_dynamic_tokens: dynamicTokens,\n  user_template_total_tokens: totalUserTokens\n};"
+      },
+      "id": "estimate-user-tokens",
+      "name": "Estimate User Template Tokens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Estimate response tokens from max_tokens setting\nconst maxTokens = $json.max_tokens || 1000;\n\n// Response tokens = max_tokens setting (conservative estimate)\nconst responseTokens = maxTokens;\n\nreturn {\n  ...($json),\n  estimated_response_tokens: responseTokens\n};"
+      },
+      "id": "estimate-response-tokens",
+      "name": "Estimate Response Tokens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate total tokens and cost\n// Input tokens: system + user template total\nconst inputTokens = $json.system_prompt_tokens + $json.user_template_total_tokens;\n\n// Output tokens: response tokens\nconst outputTokens = $json.estimated_response_tokens;\n\n// Total tokens\nconst totalTokens = inputTokens + outputTokens;\n\n// Claude pricing (as of 2024)\n// Input: $3 per million tokens\n// Output: $15 per million tokens\nconst inputCostPerMillion = 3.0;\nconst outputCostPerMillion = 15.0;\n\n// Calculate costs\nconst inputCost = (inputTokens / 1000000) * inputCostPerMillion;\nconst outputCost = (outputTokens / 1000000) * outputCostPerMillion;\nconst totalCost = inputCost + outputCost;\n\nreturn {\n  ...($json),\n  input_tokens: inputTokens,\n  output_tokens: outputTokens,\n  total_tokens: totalTokens,\n  input_cost: parseFloat(inputCost.toFixed(6)),\n  output_cost: parseFloat(outputCost.toFixed(6)),\n  total_cost: parseFloat(totalCost.toFixed(6)),\n  currency: 'USD'\n};"
+      },
+      "id": "calculate-costs",
+      "name": "Calculate Costs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response\nreturn {\n  status: 200,\n  message: 'Token estimation complete',\n  data: {\n    system_prompt: {\n      characters: $json.system_prompt_chars,\n      tokens: $json.system_prompt_tokens\n    },\n    user_template: {\n      base_characters: $json.user_template_chars,\n      base_tokens: $json.user_template_base_tokens,\n      dynamic_tokens: $json.user_template_dynamic_tokens,\n      total_tokens: $json.user_template_total_tokens\n    },\n    response: {\n      max_tokens_setting: $json.max_tokens,\n      estimated_tokens: $json.estimated_response_tokens\n    },\n    totals: {\n      input_tokens: $json.input_tokens,\n      output_tokens: $json.output_tokens,\n      total_tokens: $json.total_tokens\n    },\n    costs: {\n      input_cost_usd: $json.input_cost,\n      output_cost_usd: $json.output_cost,\n      total_cost_usd: $json.total_cost,\n      pricing_basis: {\n        input_per_million: 3.0,\n        output_per_million: 15.0\n      }\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {}
+}

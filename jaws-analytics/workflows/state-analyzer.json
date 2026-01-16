@@ -1,0 +1,97 @@
+{
+  "name": "State Analyzer",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has state content\nconst stateContent = $json.state || $json.state_content || $json.stateContent || '';\n\nlet stateData = null;\nif (typeof stateContent === 'string') {\n  try {\n    stateData = JSON.parse(stateContent);\n  } catch (e) {\n    return {\n      status: 400,\n      error: 'Invalid JSON',\n      message: 'state must be valid JSON'\n    };\n  }\n} else if (typeof stateContent === 'object') {\n  stateData = stateContent;\n}\n\nif (!stateData) {\n  return {\n    status: 400,\n    error: 'Missing required field',\n    message: 'Input must include state or state_content field'\n  };\n}\n\nreturn {\n  state_data: stateData,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract iteration metrics\nconst state = $json.state_data;\nconst currentIteration = state.currentIteration || 0;\nconst maxIterations = state.maxIterations || state.max_iterations || 50; // Default assumption\n\nreturn {\n  ...($json),\n  current_iteration: currentIteration,\n  max_iterations: maxIterations\n};"
+      },
+      "id": "extract-iterations",
+      "name": "Extract Iteration Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract task metrics\nconst state = $json.state_data;\nconst completedTasks = state.completedTasks || [];\nconst failedTasks = state.failedTasks || [];\nconst skippedTasks = state.skippedTasks || [];\n\nreturn {\n  ...($json),\n  completed_tasks: completedTasks,\n  completed_tasks_count: completedTasks.length,\n  failed_tasks: failedTasks,\n  failed_tasks_count: failedTasks.length,\n  skipped_tasks: skippedTasks,\n  skipped_tasks_count: skippedTasks.length\n};"
+      },
+      "id": "extract-tasks",
+      "name": "Extract Task Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract failure metrics\nconst state = $json.state_data;\nconst consecutiveFailures = state.consecutiveFailures || 0;\nconst failedTasks = state.failedTasks || [];\n\n// Extract failed task IDs and reasons\nconst failedTaskDetails = failedTasks.map(task => ({\n  task_id: task.taskId || task.task_id || 'unknown',\n  iteration: task.iteration || 'unknown',\n  timestamp: task.timestamp || 'unknown',\n  reason: task.reason || task.error || 'No reason recorded'\n}));\n\nreturn {\n  ...($json),\n  consecutive_failures: consecutiveFailures,\n  failed_task_details: failedTaskDetails\n};"
+      },
+      "id": "extract-failures",
+      "name": "Extract Failure Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract checkpoint history\nconst state = $json.state_data;\nconst checkpointHistory = state.checkpointHistory || [];\n\nconst checkpointDetails = checkpointHistory.map(cp => ({\n  iteration: cp.iteration || 'unknown',\n  timestamp: cp.timestamp || 'unknown',\n  reason: cp.reason || 'Review checkpoint',\n  choice: cp.choice || 'unknown'\n}));\n\nreturn {\n  ...($json),\n  checkpoint_history: checkpointDetails,\n  checkpoint_count: checkpointHistory.length\n};"
+      },
+      "id": "extract-checkpoints",
+      "name": "Extract Checkpoint History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract other metrics\nconst state = $json.state_data;\nconst learnings = state.learnings || [];\nconst currentTaskId = state.currentTaskId || 'unknown';\nconst projectName = state.projectName || 'unknown';\nconst lastError = state.lastError || null;\n\n// Detect rabbit holes (extended failure sequences)\nconst failedTasks = state.failedTasks || [];\nconst rabbitHoles = [];\nif (failedTasks.length > 5) {\n  // Group consecutive failures\n  let consecutiveGroup = [];\n  for (let i = 0; i < failedTasks.length; i++) {\n    if (i === 0 || failedTasks[i].taskId === failedTasks[i-1].taskId) {\n      consecutiveGroup.push(failedTasks[i]);\n    } else if (consecutiveGroup.length > 3) {\n      // Found a rabbit hole (multiple consecutive failures on same task)\n      rabbitHoles.push({\n        task_id: consecutiveGroup[0].taskId,\n        failure_count: consecutiveGroup.length,\n        iterations: consecutiveGroup.map(f => f.iteration)\n      });\n      consecutiveGroup = [failedTasks[i]];\n    } else {\n      consecutiveGroup = [failedTasks[i]];\n    }\n  }\n  if (consecutiveGroup.length > 3) {\n    rabbitHoles.push({\n      task_id: consecutiveGroup[0].taskId,\n      failure_count: consecutiveGroup.length,\n      iterations: consecutiveGroup.map(f => f.iteration)\n    });\n  }\n}\n\nreturn {\n  ...($json),\n  learnings: learnings,\n  learnings_count: learnings.length,\n  current_task_id: currentTaskId,\n  project_name: projectName,\n  last_error: lastError,\n  rabbit_holes: rabbitHoles,\n  rabbit_holes_detected: rabbitHoles.length > 0\n};"
+      },
+      "id": "extract-other-metrics",
+      "name": "Extract Other Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate build duration from timestamps\nconst state = $json.state_data;\nconst startedAt = state.startedAt || state.started_at || null;\nconst completedAt = state.completedAt || state.completed_at || new Date().toISOString();\n\nlet durationSeconds = 0;\nlet durationFormatted = 'unknown';\n\nif (startedAt) {\n  try {\n    const startTime = new Date(startedAt);\n    const endTime = new Date(completedAt);\n    durationSeconds = Math.round((endTime - startTime) / 1000);\n    \n    // Format duration\n    const hours = Math.floor(durationSeconds / 3600);\n    const minutes = Math.floor((durationSeconds % 3600) / 60);\n    const seconds = durationSeconds % 60;\n    \n    durationFormatted = `${hours}h ${minutes}m ${seconds}s`;\n  } catch (e) {\n    durationFormatted = 'Invalid timestamps';\n  }\n}\n\nreturn {\n  ...($json),\n  started_at: startedAt,\n  build_duration_seconds: durationSeconds,\n  build_duration_formatted: durationFormatted\n};"
+      },
+      "id": "calculate-duration",
+      "name": "Calculate Build Duration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response\nreturn {\n  status: 200,\n  message: 'State analysis complete',\n  data: {\n    project: {\n      name: $json.project_name,\n      current_task: $json.current_task_id\n    },\n    iterations: {\n      current: $json.current_iteration,\n      max: $json.max_iterations\n    },\n    tasks: {\n      completed: {\n        count: $json.completed_tasks_count,\n        list: $json.completed_tasks\n      },\n      failed: {\n        count: $json.failed_tasks_count,\n        list: $json.failed_task_details\n      },\n      skipped: {\n        count: $json.skipped_tasks_count,\n        list: $json.skipped_tasks\n      }\n    },\n    failures: {\n      consecutive_count: $json.consecutive_failures,\n      rabbit_holes_detected: $json.rabbit_holes_detected,\n      rabbit_holes: $json.rabbit_holes,\n      last_error: $json.last_error\n    },\n    checkpoints: {\n      total: $json.checkpoint_count,\n      history: $json.checkpoint_history\n    },\n    learnings: {\n      count: $json.learnings_count,\n      list: $json.learnings\n    },\n    build: {\n      started_at: $json.started_at,\n      duration_seconds: $json.build_duration_seconds,\n      duration_formatted: $json.build_duration_formatted\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    }
+  ],
+  "connections": {}
+}

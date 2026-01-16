@@ -1,0 +1,117 @@
+{
+  "name": "Workflow Analyzer",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has workflows array\nconst workflows = $json.workflows || $json.workflow_array || [];\n\nif (!Array.isArray(workflows)) {\n  return {\n    status: 400,\n    error: 'Invalid input',\n    message: 'Input must include workflows array'\n  };\n}\n\nif (workflows.length === 0) {\n  return {\n    status: 400,\n    error: 'Empty workflows',\n    message: 'Workflows array cannot be empty'\n  };\n}\n\nreturn {\n  workflows: workflows,\n  valid: true,\n  workflow_count: workflows.length\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract workflow names\nconst workflows = $json.workflows;\nconst workflowNames = workflows.map(w => w.name || 'Unnamed');\n\nreturn {\n  ...($json),\n  workflow_names: workflowNames\n};"
+      },
+      "id": "extract-names",
+      "name": "Extract Workflow Names",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count total nodes per workflow\nconst workflows = $json.workflows;\nconst nodeCounts = workflows.map(w => {\n  const nodes = w.nodes || [];\n  return nodes.length;\n});\n\nreturn {\n  ...($json),\n  node_counts: nodeCounts,\n  total_nodes: nodeCounts.reduce((a, b) => a + b, 0)\n};"
+      },
+      "id": "count-nodes",
+      "name": "Count Total Nodes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract trigger types\nconst workflows = $json.workflows;\n\nconst triggerTypes = workflows.map(w => {\n  const nodes = w.nodes || [];\n  \n  // Find the trigger node (first node typically, or node with trigger type)\n  const triggerNode = nodes.find(n => {\n    const type = n.type || '';\n    return type.includes('Trigger') || \n           type.includes('trigger') ||\n           type.includes('Webhook') ||\n           type.includes('webhook') ||\n           type.includes('Schedule') ||\n           type.includes('schedule');\n  }) || nodes[0];\n  \n  if (!triggerNode) return 'unknown';\n  \n  const type = triggerNode.type || '';\n  \n  // Classify trigger type\n  if (type.includes('webhook') || type.includes('Webhook')) {\n    return 'webhook';\n  } else if (type.includes('schedule') || type.includes('Schedule')) {\n    return 'schedule';\n  } else if (type.includes('executeWorkflow') || type.includes('ExecuteWorkflow')) {\n    return 'execute_workflow';\n  } else if (type.includes('Manual') || type.includes('manual')) {\n    return 'manual';\n  } else {\n    return 'other';\n  }\n});\n\nreturn {\n  ...($json),\n  trigger_types: triggerTypes\n};"
+      },
+      "id": "extract-trigger-types",
+      "name": "Extract Trigger Types",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count node types per workflow\nconst workflows = $json.workflows;\n\nconst nodeTypeBreakdowns = workflows.map(w => {\n  const nodes = w.nodes || [];\n  const typeCount = {};\n  \n  nodes.forEach(node => {\n    const type = node.type || 'unknown';\n    \n    // Extract simplified type name\n    let simplifiedType = type;\n    \n    // Common patterns: n8n-nodes-base.nodeName -> nodeName\n    if (type.includes('.')) {\n      simplifiedType = type.split('.').pop();\n    }\n    \n    // Convert camelCase to words for readability\n    simplifiedType = simplifiedType\n      .replace(/([A-Z])/g, ' $1')\n      .toLowerCase()\n      .trim();\n    \n    typeCount[simplifiedType] = (typeCount[simplifiedType] || 0) + 1;\n  });\n  \n  return typeCount;\n});\n\nreturn {\n  ...($json),\n  node_type_breakdown: nodeTypeBreakdowns\n};"
+      },
+      "id": "count-node-types",
+      "name": "Count Node Types",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count Claude API nodes (HTTP Request to api.anthropic.com)\nconst workflows = $json.workflows;\n\nconst claudeNodeCounts = workflows.map(w => {\n  const nodes = w.nodes || [];\n  \n  let claudeCount = 0;\n  \n  nodes.forEach(node => {\n    const type = node.type || '';\n    const params = node.parameters || {};\n    const url = params.url || '';\n    \n    // Check if HTTP Request node calling Anthropic API\n    if ((type.includes('httpRequest') || type.includes('http')) && \n        url.includes('anthropic')) {\n      claudeCount++;\n    }\n  });\n  \n  return claudeCount;\n});\n\nreturn {\n  ...($json),\n  claude_api_node_counts: claudeNodeCounts,\n  total_claude_nodes: claudeNodeCounts.reduce((a, b) => a + b, 0)\n};"
+      },
+      "id": "count-claude-nodes",
+      "name": "Count Claude API Nodes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count Supabase nodes\nconst workflows = $json.workflows;\n\nconst supabaseNodeCounts = workflows.map(w => {\n  const nodes = w.nodes || [];\n  \n  let supabaseCount = 0;\n  \n  nodes.forEach(node => {\n    const type = node.type || '';\n    const params = node.parameters || {};\n    const resource = params.resource || '';\n    \n    // Check if Supabase node or generic DB node with Supabase config\n    if (type.includes('supabase') || \n        type.includes('Supabase') ||\n        (type.includes('database') && params.connection && params.connection.includes('supabase'))) {\n      supabaseCount++;\n    }\n  });\n  \n  return supabaseCount;\n});\n\nreturn {\n  ...($json),\n  supabase_node_counts: supabaseNodeCounts,\n  total_supabase_nodes: supabaseNodeCounts.reduce((a, b) => a + b, 0)\n};"
+      },
+      "id": "count-supabase-nodes",
+      "name": "Count Supabase Nodes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Estimate tokens per Claude node\n// Based on Claude pricing: ~4 chars = 1 token (approximate)\nconst workflows = $json.workflows;\n\nconst tokenEstimates = workflows.map(w => {\n  const nodes = w.nodes || [];\n  const estimates = [];\n  \n  nodes.forEach(node => {\n    const type = node.type || '';\n    const params = node.parameters || {};\n    const url = params.url || '';\n    \n    if ((type.includes('httpRequest') || type.includes('http')) && url.includes('anthropic')) {\n      // Try to extract system prompt\n      const headers = params.headers || {};\n      let systemPromptLen = 0;\n      \n      // Look for x-anthropic-system-prompt or messages with role: system\n      if (headers['x-anthropic-system-prompt']) {\n        systemPromptLen = (headers['x-anthropic-system-prompt'] || '').length;\n      }\n      \n      // Look in request body for messages\n      const body = params.body || '';\n      const maxTokens = params.maxTokens || 1000;\n      \n      // Estimate tokens (4 chars = 1 token)\n      const systemTokens = Math.ceil(systemPromptLen / 4);\n      const responseTokens = maxTokens || 500;\n      \n      // For templates/dynamic content, estimate 200 tokens average\n      const templateTokens = 200;\n      \n      const totalTokens = systemTokens + templateTokens + responseTokens;\n      \n      estimates.push({\n        node_id: node.id || 'unknown',\n        node_name: node.name || 'Unnamed',\n        system_prompt_tokens: systemTokens,\n        template_tokens: templateTokens,\n        response_tokens: responseTokens,\n        estimated_total: totalTokens\n      });\n    }\n  });\n  \n  const totalTokens = estimates.reduce((sum, e) => sum + e.estimated_total, 0);\n  \n  return {\n    workflow_name: w.name || 'Unnamed',\n    claude_nodes: estimates,\n    estimated_tokens_total: totalTokens\n  };\n});\n\nreturn {\n  ...($json),\n  token_estimates: tokenEstimates\n};"
+      },
+      "id": "estimate-tokens",
+      "name": "Estimate Token Usage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Identify workflow relationships (Execute Workflow connections)\nconst workflows = $json.workflows;\n\nconst relationships = workflows.map(w => {\n  const nodes = w.nodes || [];\n  const connections = w.connections || {};\n  const relationships = [];\n  \n  // Look for Execute Workflow nodes\n  nodes.forEach(node => {\n    const type = node.type || '';\n    \n    if (type.includes('executeWorkflow') || type.includes('Execute')) {\n      const params = node.parameters || {};\n      const workflowId = params.workflowId || params.workflow || params.name || null;\n      \n      if (workflowId) {\n        relationships.push({\n          from_workflow: w.name || 'Unnamed',\n          from_node: node.name || 'Execute Workflow',\n          to_workflow: workflowId,\n          type: 'execute_workflow'\n        });\n      }\n    }\n  });\n  \n  return relationships;\n}).flat();\n\nreturn {\n  ...($json),\n  workflow_relationships: relationships,\n  relationship_count: relationships.length\n};"
+      },
+      "id": "identify-relationships",
+      "name": "Identify Workflow Relationships",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response - array of workflow analysis objects\nconst workflows = $json.workflows;\nconst workflowAnalysis = workflows.map((w, index) => {\n  return {\n    workflow_name: w.name || 'Unnamed',\n    total_nodes: $json.node_counts[index],\n    trigger_type: $json.trigger_types[index],\n    node_type_breakdown: $json.node_type_breakdown[index],\n    claude_api_nodes: $json.claude_api_node_counts[index],\n    supabase_nodes: $json.supabase_node_counts[index],\n    token_estimates: ($json.token_estimates[index] || { claude_nodes: [], estimated_tokens_total: 0 })\n  };\n});\n\nreturn {\n  status: 200,\n  message: 'Workflow analysis complete',\n  data: {\n    total_workflows: $json.workflow_count,\n    total_nodes_all_workflows: $json.total_nodes,\n    total_claude_nodes: $json.total_claude_nodes,\n    total_supabase_nodes: $json.total_supabase_nodes,\n    workflow_relationships: $json.workflow_relationships,\n    relationships_count: $json.relationship_count,\n    workflows: workflowAnalysis\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300]
+    }
+  ],
+  "connections": {}
+}

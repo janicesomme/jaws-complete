@@ -1,0 +1,216 @@
+{
+  "name": "PRD Analyzer",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has prd_content\nconst prdContent = $json.prd_content || $json.content || $json.prd || '';\n\nif (!prdContent) {\n  return {\n    status: 400,\n    error: 'Missing required field: prd_content',\n    message: 'Input must include prd_content field with PRD markdown text'\n  };\n}\n\nreturn {\n  prd_content: prdContent,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract project name from title (# PRD: Project Name)\nconst content = $json.prd_content;\nlet projectName = null;\n\nconst titleMatch = content.match(/^#\\s+PRD:\\s+(.+)$/m);\nif (titleMatch) {\n  projectName = titleMatch[1].trim();\n}\n\nreturn {\n  ...($json),\n  project_name: projectName\n};"
+      },
+      "id": "extract-project-name",
+      "name": "Extract Project Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract client name from **Client:** field\nconst content = $json.prd_content;\nlet clientName = null;\n\nconst clientMatch = content.match(/\\*\\*Client:\\*\\*\\s+(.+?)(?:\\n|$)/m);\nif (clientMatch) {\n  clientName = clientMatch[1].trim();\n}\n\nreturn {\n  ...($json),\n  client_name: clientName\n};"
+      },
+      "id": "extract-client-name",
+      "name": "Extract Client Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count user stories (###\\s+US-XXX pattern)\nconst content = $json.prd_content;\n\n// Match all user story headers like \"### US-001:\", \"### US-002:\"\nconst userStoryMatches = content.match(/###\\s+US-\\d+:/g) || [];\nconst totalUserStories = userStoryMatches.length;\n\n// Extract individual user story IDs\nconst userStoryIds = userStoryMatches.map(match => {\n  const idMatch = match.match(/US-\\d+/);\n  return idMatch ? idMatch[0] : null;\n}).filter(Boolean);\n\nreturn {\n  ...($json),\n  total_user_stories: totalUserStories,\n  user_story_ids: userStoryIds\n};"
+      },
+      "id": "count-user-stories",
+      "name": "Count User Stories",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count tasks by status: [x], [ ], [SKIPPED]\nconst content = $json.prd_content;\n\n// Count completed tasks: [x] or [X]\nconst completedMatches = content.match(/^\\s*-\\s*\\[x\\]/gmi) || [];\nconst completedCount = completedMatches.length;\n\n// Count incomplete tasks: [ ] (with space)\nconst incompleteMatches = content.match(/^\\s*-\\s*\\[\\s\\]/gm) || [];\nconst incompleteCount = incompleteMatches.length;\n\n// Count skipped tasks: [SKIPPED] or [skipped]\nconst skippedMatches = content.match(/^\\s*-\\s*\\[SKIPPED\\]/gmi) || [];\nconst skippedCount = skippedMatches.length;\n\n// Calculate total tasks\nconst totalTasks = completedCount + incompleteCount + skippedCount;\n\n// Calculate completion rate\nconst completionRate = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;\n\nreturn {\n  ...($json),\n  tasks_completed: completedCount,\n  tasks_incomplete: incompleteCount,\n  tasks_skipped: skippedCount,\n  tasks_total: totalTasks,\n  completion_rate: completionRate\n};"
+      },
+      "id": "count-tasks",
+      "name": "Count Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract phases and checkpoint gates\nconst content = $json.prd_content;\n\n// Find phase headers (look for PHASE X: Name pattern)\n// Pattern matches: PHASE 1: Foundation                                    [CHECKPOINT: FOUNDATION]\nconst phaseRegex = /PHASE\\s+(\\d+):\\s+(.+?)\\s+\\[CHECKPOINT:\\s+(.+?)\\]/g;\nlet phaseMatch;\nconst phases = [];\n\nwhile ((phaseMatch = phaseRegex.exec(content)) !== null) {\n  phases.push({\n    phase_number: parseInt(phaseMatch[1]),\n    phase_name: phaseMatch[2].trim(),\n    checkpoint: phaseMatch[3].trim()\n  });\n}\n\n// Count checkpoint gates (⏸️ **CHECKPOINT: pattern)\nconst checkpointMatches = content.match(/⏸️\\s*\\*\\*CHECKPOINT:/g) || [];\nconst checkpointCount = checkpointMatches.length;\n\nreturn {\n  ...($json),\n  phases: phases,\n  phases_count: phases.length,\n  checkpoints_count: checkpointCount\n};"
+      },
+      "id": "extract-phases",
+      "name": "Extract Phases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract goals as array from ## Goals section\nconst content = $json.prd_content;\nconst goals = [];\n\n// Find Goals section\nconst goalsMatch = content.match(/##\\s+Goals\\s*\\n([\\s\\S]*?)(?=\\n##|$)/);\nif (goalsMatch) {\n  const goalsSection = goalsMatch[1];\n  \n  // Extract bullet points (lines starting with -)\n  const goalLines = goalsSection.match(/^\\s*-\\s+(.+)$/gm) || [];\n  \n  goalLines.forEach(line => {\n    const goal = line.replace(/^\\s*-\\s+/, '').trim();\n    if (goal) {\n      goals.push(goal);\n    }\n  });\n}\n\nreturn {\n  ...($json),\n  goals: goals,\n  goals_count: goals.length\n};"
+      },
+      "id": "extract-goals",
+      "name": "Extract Goals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract tech stack as array from ## Technical Stack section\nconst content = $json.prd_content;\nconst techStack = [];\n\n// Find Technical Stack section\nconst techStackMatch = content.match(/##\\s+Technical\\s+Stack\\s*\\n([\\s\\S]*?)(?=\\n##|$)/);\nif (techStackMatch) {\n  const techStackSection = techStackMatch[1];\n  \n  // Extract bullet points with **Label:** Value format\n  const techLines = techStackSection.match(/^\\s*-\\s+\\*\\*(.+?):\\*\\*\\s+(.+)$/gm) || [];\n  \n  techLines.forEach(line => {\n    const match = line.match(/\\*\\*(.+?):\\*\\*\\s+(.+)$/);\n    if (match) {\n      techStack.push({\n        category: match[1].trim(),\n        technology: match[2].trim()\n      });\n    }\n  });\n}\n\nreturn {\n  ...($json),\n  tech_stack: techStack,\n  tech_stack_count: techStack.length\n};"
+      },
+      "id": "extract-tech-stack",
+      "name": "Extract Tech Stack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final structured response\nreturn {\n  status: 200,\n  message: 'PRD analysis complete',\n  data: {\n    project_name: $json.project_name,\n    client_name: $json.client_name,\n    user_stories: {\n      total: $json.total_user_stories,\n      ids: $json.user_story_ids\n    },\n    tasks: {\n      total: $json.tasks_total,\n      completed: $json.tasks_completed,\n      incomplete: $json.tasks_incomplete,\n      skipped: $json.tasks_skipped,\n      completion_rate: $json.completion_rate\n    },\n    phases: {\n      total: $json.phases_count,\n      details: $json.phases,\n      checkpoints: $json.checkpoints_count\n    },\n    goals: {\n      total: $json.goals_count,\n      list: $json.goals\n    },\n    tech_stack: {\n      total: $json.tech_stack_count,\n      list: $json.tech_stack\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Extract Project Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Project Name": {
+      "main": [
+        [
+          {
+            "node": "Extract Client Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Client Name": {
+      "main": [
+        [
+          {
+            "node": "Count User Stories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count User Stories": {
+      "main": [
+        [
+          {
+            "node": "Count Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count Tasks": {
+      "main": [
+        [
+          {
+            "node": "Extract Phases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Phases": {
+      "main": [
+        [
+          {
+            "node": "Extract Goals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Goals": {
+      "main": [
+        [
+          {
+            "node": "Extract Tech Stack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Tech Stack": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

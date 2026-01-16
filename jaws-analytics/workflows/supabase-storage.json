@@ -1,0 +1,475 @@
+{
+  "name": "Supabase Storage",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "executeWorkflow"
+      },
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input has all required analysis results\nconst prd = $json.prd_analysis || $json.prd || null;\nconst state = $json.state_analysis || $json.state || null;\nconst workflows = $json.workflow_analysis || $json.workflows || null;\nconst tables = $json.tables_analysis || $json.tables || null;\nconst tokens = $json.token_analysis || $json.tokens || null;\nconst summary = $json.ai_summary || $json.summary || null;\nconst architecture = $json.architecture_diagram || $json.architecture || null;\nconst dashboardSpec = $json.dashboard_spec || null;\n\nif (!prd || !state) {\n  return {\n    status: 400,\n    error: 'Missing required fields',\n    message: 'Input must include prd_analysis and state_analysis'\n  };\n}\n\nreturn {\n  prd_data: prd,\n  state_data: state,\n  workflows_data: workflows || { data: [] },\n  tables_data: tables || { data: [] },\n  tokens_data: tokens || { data: {} },\n  summary_data: summary || { data: {} },\n  architecture_data: architecture || { data: { mermaid_code: '' } },\n  dashboard_spec_data: dashboardSpec || { dashboard_spec: {} },\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract data for jaws_builds table insert\nconst prd = $json.prd_data.data || $json.prd_data || {};\nconst state = $json.state_data.data || $json.state_data || {};\nconst workflows = $json.workflows_data.data || [];\nconst tables = $json.tables_data.data || [];\nconst tokens = $json.tokens_data.data || $json.tokens_data || {};\nconst summary = $json.summary_data.data || $json.summary_data || {};\nconst architecture = $json.architecture_data.data || $json.architecture_data || {};\nconst dashboardSpec = $json.dashboard_spec_data.dashboard_spec || $json.dashboard_spec_data || {};\n\n// Project identification\nconst projectName = prd.project_name || state.project?.name || 'Unknown Project';\nconst clientName = prd.client_name || state.project?.client || null;\nconst buildDate = new Date().toISOString();\n\n// Iteration metrics\nconst iterationsUsed = state.iterations?.current || state.currentIteration || 0;\nconst iterationsMax = state.iterations?.max || state.maxIterations || 50;\n\n// Task completion metrics\nconst tasksTotal = prd.total_tasks || prd.total_user_stories || 0;\nconst tasksCompleted = prd.tasks_completed || state.tasks?.completed?.count || 0;\nconst tasksSkipped = prd.tasks_skipped || state.tasks?.skipped?.count || 0;\nconst tasksFailed = prd.tasks_failed || state.tasks?.failed?.count || 0;\n\n// Build output counts\nconst workflowsCreated = Array.isArray(workflows) ? workflows.length : 0;\nconst tablesCreated = Array.isArray(tables) ? tables.length : 0;\n\n// Token and cost estimates\nconst estimatedTokensPerRun = tokens.total_tokens || tokens.estimated_tokens || 0;\nconst estimatedMonthlyCost = tokens.monthly_cost || tokens.estimated_monthly_cost || 0;\n\n// Build execution metrics\nconst buildDurationMinutes = state.build?.duration_minutes || 0;\nconst checkpointsTriggered = state.checkpoints?.total || state.checkpoints?.count || 0;\nconst rabbitHolesDetected = state.failures?.rabbit_holes?.length || 0;\n\n// AI-generated summaries and specs\nconst prdSummary = summary.executive_summary || summary.summaries?.executive || null;\nconst architectureMermaid = architecture.mermaid_code || null;\nconst dashboardSpecJson = dashboardSpec;\n\nconst buildRecord = {\n  project_name: projectName,\n  client_name: clientName,\n  build_date: buildDate,\n  iterations_used: iterationsUsed,\n  iterations_max: iterationsMax,\n  tasks_total: tasksTotal,\n  tasks_completed: tasksCompleted,\n  tasks_skipped: tasksSkipped,\n  tasks_failed: tasksFailed,\n  workflows_created: workflowsCreated,\n  tables_created: tablesCreated,\n  estimated_tokens_per_run: estimatedTokensPerRun,\n  estimated_monthly_cost: estimatedMonthlyCost,\n  build_duration_minutes: buildDurationMinutes,\n  checkpoints_triggered: checkpointsTriggered,\n  rabbit_holes_detected: rabbitHolesDetected,\n  prd_summary: prdSummary,\n  architecture_mermaid: architectureMermaid,\n  dashboard_spec: dashboardSpecJson\n};\n\nreturn {\n  ...($json),\n  build_record: buildRecord\n};"
+      },
+      "id": "prepare-build-record",
+      "name": "Prepare Build Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/jaws_builds",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify($json.build_record) }}",
+        "options": {}
+      },
+      "id": "insert-build",
+      "name": "Insert Build Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract build_id from response\nconst response = $json;\n\nif (!Array.isArray(response) || response.length === 0) {\n  return {\n    status: 400,\n    error: 'Failed to insert build record',\n    message: 'Supabase did not return a build_id'\n  };\n}\n\nconst buildId = response[0].id;\n\nif (!buildId) {\n  return {\n    status: 400,\n    error: 'Invalid response from Supabase',\n    message: 'Build record inserted but no ID returned'\n  };\n}\n\nreturn {\n  build_id: buildId,\n  build_inserted: true\n};"
+      },
+      "id": "extract-build-id",
+      "name": "Extract Build ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get workflows data and build_id from previous nodes\nconst buildId = $('Extract Build ID').item.json.build_id;\nconst workflowsData = $('Validate Input').item.json.workflows_data.data || [];\n\nif (!Array.isArray(workflowsData) || workflowsData.length === 0) {\n  return {\n    build_id: buildId,\n    workflows_to_insert: [],\n    skip_workflows: true\n  };\n}\n\n// Prepare workflow records for insertion\nconst workflowRecords = workflowsData.map(wf => ({\n  build_id: buildId,\n  workflow_name: wf.workflow_name || wf.name || 'Unknown Workflow',\n  workflow_type: wf.workflow_type || 'sub-workflow',\n  trigger_type: wf.trigger_type || 'execute',\n  node_count: wf.node_count || 0,\n  claude_nodes: wf.claude_nodes || 0,\n  supabase_nodes: wf.supabase_nodes || 0,\n  estimated_tokens: wf.estimated_tokens || 0,\n  purpose: wf.purpose || null,\n  nodes_breakdown: wf.nodes_breakdown || null\n}));\n\nreturn {\n  build_id: buildId,\n  workflows_to_insert: workflowRecords,\n  skip_workflows: false\n};"
+      },
+      "id": "prepare-workflow-records",
+      "name": "Prepare Workflow Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip_workflows }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-has-workflows",
+      "name": "Check Has Workflows",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/jaws_workflows",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify($json.workflows_to_insert) }}",
+        "options": {}
+      },
+      "id": "insert-workflows",
+      "name": "Insert Workflows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get build_id from previous node\nconst buildId = $json.build_id;\n\nreturn {\n  build_id: buildId,\n  workflows_inserted: 0,\n  workflows_skipped: true\n};"
+      },
+      "id": "skip-workflows",
+      "name": "Skip Workflows (None Found)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count workflows inserted\nconst response = $json;\nconst workflowsInserted = Array.isArray(response) ? response.length : 0;\nconst buildId = $('Extract Build ID').item.json.build_id;\n\nreturn {\n  build_id: buildId,\n  workflows_inserted: workflowsInserted,\n  workflows_skipped: false\n};"
+      },
+      "id": "count-workflows-inserted",
+      "name": "Count Workflows Inserted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 200]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-workflow-results",
+      "name": "Merge Workflow Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get tables data and build_id\nconst buildId = $json.build_id;\nconst tablesData = $('Validate Input').item.json.tables_data.data || [];\n\nif (!Array.isArray(tablesData) || tablesData.length === 0) {\n  return {\n    build_id: buildId,\n    workflows_inserted: $json.workflows_inserted || 0,\n    tables_to_insert: [],\n    skip_tables: true\n  };\n}\n\n// Prepare table records for insertion\nconst tableRecords = tablesData.map(tbl => ({\n  build_id: buildId,\n  table_name: tbl.table_name || tbl.name || 'unknown_table',\n  column_count: tbl.column_count || 0,\n  has_rls: tbl.has_rls || false,\n  row_count: tbl.row_count || 0,\n  purpose: tbl.purpose || null\n}));\n\nreturn {\n  build_id: buildId,\n  workflows_inserted: $json.workflows_inserted || 0,\n  tables_to_insert: tableRecords,\n  skip_tables: false\n};"
+      },
+      "id": "prepare-table-records",
+      "name": "Prepare Table Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip_tables }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-has-tables",
+      "name": "Check Has Tables",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/jaws_tables",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify($json.tables_to_insert) }}",
+        "options": {}
+      },
+      "id": "insert-tables",
+      "name": "Insert Tables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2640, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Skip tables\nconst buildId = $json.build_id;\nconst workflowsInserted = $json.workflows_inserted || 0;\n\nreturn {\n  build_id: buildId,\n  workflows_inserted: workflowsInserted,\n  tables_inserted: 0,\n  tables_skipped: true\n};"
+      },
+      "id": "skip-tables",
+      "name": "Skip Tables (None Found)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count tables inserted\nconst response = $json;\nconst tablesInserted = Array.isArray(response) ? response.length : 0;\nconst buildId = $('Extract Build ID').item.json.build_id;\nconst workflowsInserted = $('Merge Workflow Results').item.json.workflows_inserted || 0;\n\nreturn {\n  build_id: buildId,\n  workflows_inserted: workflowsInserted,\n  tables_inserted: tablesInserted,\n  tables_skipped: false\n};"
+      },
+      "id": "count-tables-inserted",
+      "name": "Count Tables Inserted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2840, 200]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-table-results",
+      "name": "Merge Table Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [3040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final response\nconst buildId = $json.build_id;\nconst workflowsInserted = $json.workflows_inserted || 0;\nconst tablesInserted = $json.tables_inserted || 0;\n\nreturn {\n  status: 200,\n  message: 'Analytics data stored successfully',\n  data: {\n    build_id: buildId,\n    records_created: {\n      builds: 1,\n      workflows: workflowsInserted,\n      tables: tablesInserted,\n      total: 1 + workflowsInserted + tablesInserted\n    }\n  }\n};"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3240, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Build Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Build Record": {
+      "main": [
+        [
+          {
+            "node": "Insert Build Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Build Record": {
+      "main": [
+        [
+          {
+            "node": "Extract Build ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Build ID": {
+      "main": [
+        [
+          {
+            "node": "Prepare Workflow Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Workflow Records": {
+      "main": [
+        [
+          {
+            "node": "Check Has Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Has Workflows": {
+      "main": [
+        [
+          {
+            "node": "Insert Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Workflows (None Found)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Workflows": {
+      "main": [
+        [
+          {
+            "node": "Count Workflows Inserted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Workflows (None Found)": {
+      "main": [
+        [
+          {
+            "node": "Merge Workflow Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Count Workflows Inserted": {
+      "main": [
+        [
+          {
+            "node": "Merge Workflow Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Workflow Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Table Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Table Records": {
+      "main": [
+        [
+          {
+            "node": "Check Has Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Has Tables": {
+      "main": [
+        [
+          {
+            "node": "Insert Tables",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Tables (None Found)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Tables": {
+      "main": [
+        [
+          {
+            "node": "Count Tables Inserted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Tables (None Found)": {
+      "main": [
+        [
+          {
+            "node": "Merge Table Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Count Tables Inserted": {
+      "main": [
+        [
+          {
+            "node": "Merge Table Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Table Results": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}

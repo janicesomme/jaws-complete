@@ -1,0 +1,107 @@
+{
+  "name": "PRD Analyzer Webhook",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prd-analyze",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "prd-analyze"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate prd_content from webhook body\nconst body = $json.body || $json;\nconst prdContent = body.prd_content || body.content || body.prd || '';\n\nif (!prdContent) {\n  return {\n    status: 400,\n    error: 'Missing required field: prd_content',\n    message: 'Request body must include prd_content field with PRD markdown text'\n  };\n}\n\nreturn {\n  prd_content: prdContent,\n  valid: true\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract project name from title\nconst content = $json.prd_content;\nlet projectName = null;\n\nconst titleMatch = content.match(/^#\\s+PRD:\\s+(.+)$/m);\nif (titleMatch) {\n  projectName = titleMatch[1].trim();\n}\n\nreturn {\n  ...($json),\n  project_name: projectName\n};"
+      },
+      "id": "extract-project",
+      "name": "Extract Project Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract client name\nconst content = $json.prd_content;\nlet clientName = null;\n\nconst clientMatch = content.match(/\\*\\*Client:\\*\\*\\s+(.+?)(?:\\n|$)/m);\nif (clientMatch) {\n  clientName = clientMatch[1].trim();\n}\n\nreturn {\n  ...($json),\n  client_name: clientName\n};"
+      },
+      "id": "extract-client",
+      "name": "Extract Client",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count user stories and tasks\nconst content = $json.prd_content;\n\n// User stories\nconst userStoryMatches = content.match(/###\\s+US-\\d+:/g) || [];\nconst totalUserStories = userStoryMatches.length;\n\n// Tasks\nconst completedTasks = (content.match(/^- \\[x\\]/gmi) || []).length;\nconst incompleteTasks = (content.match(/^- \\[ \\]/gmi) || []).length;\nconst skippedTasks = (content.match(/\\[SKIPPED\\]/gi) || []).length;\n\n// Phases\nconst phaseMatches = content.match(/PHASE\\s+(\\d+):/g) || [];\nconst checkpointMatches = content.match(/\\[CHECKPOINT:\\s+(.+?)\\]/g) || [];\n\n// Goals\nconst goalsSection = content.match(/## Goals([\\s\\S]*?)(?=\\n## |\\n=|$)/);\nconst goals = goalsSection ? (goalsSection[1].match(/^- (.+)$/gm) || []).map(g => g.substring(2).trim()) : [];\n\n// Tech stack\nconst techSection = content.match(/## Technical Stack([\\s\\S]*?)(?=\\n## |\\n=|$)/);\nconst techStack = techSection ? (techSection[1].match(/^- \\*\\*(.+?):\\*\\* (.+)$/gm) || []).map(t => t.substring(2).trim()) : [];\n\nreturn {\n  status: 200,\n  message: 'PRD analysis complete',\n  data: {\n    project_name: $json.project_name,\n    client_name: $json.client_name,\n    total_user_stories: totalUserStories,\n    tasks: {\n      total: completedTasks + incompleteTasks,\n      completed: completedTasks,\n      incomplete: incompleteTasks,\n      skipped: skippedTasks\n    },\n    phases: {\n      total: phaseMatches.length,\n      checkpoints: checkpointMatches.length\n    },\n    goals: goals,\n    tech_stack: techStack\n  }\n};"
+      },
+      "id": "analyze-content",
+      "name": "Analyze Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{$json.status || 200}}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1240, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Validate Input", "type": "main", "index": 0}]]
+    },
+    "Validate Input": {
+      "main": [[{"node": "Extract Project Name", "type": "main", "index": 0}]]
+    },
+    "Extract Project Name": {
+      "main": [[{"node": "Extract Client", "type": "main", "index": 0}]]
+    },
+    "Extract Client": {
+      "main": [[{"node": "Analyze Content", "type": "main", "index": 0}]]
+    },
+    "Analyze Content": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

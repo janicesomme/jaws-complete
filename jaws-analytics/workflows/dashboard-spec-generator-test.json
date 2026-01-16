@@ -1,0 +1,66 @@
+{
+  "name": "Dashboard Spec Generator Test",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard-spec-test",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "dashboard-spec-test"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract input from webhook body\nconst body = $json.body || $json;\n\nreturn {\n  prd_analysis: body.prd_analysis || body.prd || null,\n  state_analysis: body.state_analysis || body.state || null,\n  workflow_analysis: body.workflow_analysis || body.workflows || null,\n  token_analysis: body.token_analysis || body.tokens || null,\n  ai_summary: body.ai_summary || body.summary || null,\n  architecture_diagram: body.architecture_diagram || body.architecture || '',\n  build_path: body.build_path || '.'\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ \"Dashboard Spec Generator\" }}",
+        "options": {}
+      },
+      "id": "execute-dashboard-spec-generator",
+      "name": "Execute Dashboard Spec Generator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.status || 200 }}"
+        }
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Extract Input", "type": "main", "index": 0}]]
+    },
+    "Extract Input": {
+      "main": [[{"node": "Execute Dashboard Spec Generator", "type": "main", "index": 0}]]
+    },
+    "Execute Dashboard Spec Generator": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  }
+}
