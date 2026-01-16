@@ -1,0 +1,44 @@
+# JAWS .gitignore
+
+# State files (per-project, not repo-level)
+ralph-state.json
+
+# Worktrees
+.worktrees/
+
+# Node modules
+node_modules/
+
+# Build outputs (keep templates, ignore generated)
+*.generated.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.temp
+
+# Secrets (never commit!)
+.env
+.env.local
+*.key
+*credentials*
+*secret*
+
+# n8n exports (keep templates, ignore user exports)
+my-workflows/
+
+# Generated documentation (keep templates)
+generated-docs/
+
+# Test outputs
+test-output/
