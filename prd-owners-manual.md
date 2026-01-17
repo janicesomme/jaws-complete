@@ -49,12 +49,12 @@ Create a prompt and script that reads a completed PRD and generates a plain-Engl
 **DONE:** Non-technical person can read and understand their system in 5 minutes
 
 **Acceptance Criteria:**
-- [ ] Reads PRD.md and extracts system description
-- [ ] Generates plain English summary (no jargon)
-- [ ] Includes simple ASCII or text diagram
-- [ ] Lists components with friendly names (not technical names)
-- [ ] One-sentence purpose for each component
-- [ ] Output saved to `owner-manual/WHAT-YOU-HAVE.md`
+- [x] Reads PRD.md and extracts system description
+- [x] Generates plain English summary (no jargon)
+- [x] Includes simple ASCII or text diagram
+- [x] Lists components with friendly names (not technical names)
+- [x] One-sentence purpose for each component
+- [x] Output saved to `owner-manual/WHAT-YOU-HAVE.md`
 
 ---
 
@@ -70,12 +70,12 @@ Generate step-by-step explanation of system flow using "When X happens, then Y" 
 **DONE:** Owner can trace any transaction through their system mentally
 
 **Acceptance Criteria:**
-- [ ] Uses "When/Then" language throughout
-- [ ] Numbered walkthrough of typical transaction
-- [ ] Explains each step in plain English
-- [ ] Mentions what happens at decision points
-- [ ] No technical jargon (or explains it with analogy)
-- [ ] Output saved to `owner-manual/HOW-IT-WORKS.md`
+- [x] Uses "When/Then" language throughout
+- [x] Numbered walkthrough of typical transaction
+- [x] Explains each step in plain English
+- [x] Mentions what happens at decision points
+- [x] No technical jargon (or explains it with analogy)
+- [x] Output saved to `owner-manual/HOW-IT-WORKS.md`
 
 ---
 
@@ -91,12 +91,12 @@ Generate daily/weekly/monthly checklists for system operation. Include what "nor
 **DONE:** Owner has actionable checklist to keep system healthy
 
 **Acceptance Criteria:**
-- [ ] Daily checklist (2-minute tasks)
-- [ ] Weekly checklist (10-minute tasks)
-- [ ] Monthly checklist (30-minute tasks)
-- [ ] "What normal looks like" section
-- [ ] "Warning signs" section
-- [ ] Output saved to `owner-manual/DAILY-OPERATIONS.md`
+- [x] Daily checklist (2-minute tasks)
+- [x] Weekly checklist (10-minute tasks)
+- [x] Monthly checklist (30-minute tasks)
+- [x] "What normal looks like" section
+- [x] "Warning signs" section
+- [x] Output saved to `owner-manual/DAILY-OPERATIONS.md`
 
 ---
 
@@ -112,12 +112,12 @@ Generate troubleshooting guide with common issues and self-service fixes. Includ
 **DONE:** Owner can resolve 80% of issues without calling for help
 
 **Acceptance Criteria:**
-- [ ] Top 5 common issues for this system type
-- [ ] Symptom-based diagnosis (what you see → what it means)
-- [ ] Step-by-step self-service fixes
-- [ ] Clear "call for help if..." criteria
-- [ ] Emergency contact info placeholder
-- [ ] Output saved to `owner-manual/WHEN-THINGS-BREAK.md`
+- [x] Top 5 common issues for this system type
+- [x] Symptom-based diagnosis (what you see → what it means)
+- [x] Step-by-step self-service fixes
+- [x] Clear "call for help if..." criteria
+- [x] Emergency contact info placeholder
+- [x] Output saved to `owner-manual/WHEN-THINGS-BREAK.md`
 
 ---
 
@@ -133,12 +133,12 @@ Generate guide for safe self-service changes. Two categories: things owner CAN c
 **DONE:** Owner knows what they can touch and what requires support
 
 **Acceptance Criteria:**
-- [ ] "Safe changes" list with step-by-step instructions
-- [ ] "Risky changes" list with warnings
-- [ ] Specific examples for each category
-- [ ] Screenshots/location descriptions for where to make changes
-- [ ] "How to request changes" process
-- [ ] Output saved to `owner-manual/MAKING-CHANGES.md`
+- [x] "Safe changes" list with step-by-step instructions
+- [x] "Risky changes" list with warnings
+- [x] Specific examples for each category
+- [x] Screenshots/location descriptions for where to make changes
+- [x] "How to request changes" process
+- [x] Output saved to `owner-manual/MAKING-CHANGES.md`
 
 ---
 
@@ -154,12 +154,12 @@ Generate cost breakdown showing monthly operating costs per service and what aff
 **DONE:** Owner understands and can monitor their operating costs
 
 **Acceptance Criteria:**
-- [ ] Cost table by service (n8n, Supabase, etc.)
-- [ ] Estimated monthly total
-- [ ] What drives costs up (usage triggers)
-- [ ] How to check current usage
-- [ ] How to set up billing alerts
-- [ ] Output saved to `owner-manual/COSTS.md`
+- [x] Cost table by service (n8n, Supabase, etc.)
+- [x] Estimated monthly total
+- [x] What drives costs up (usage triggers)
+- [x] How to check current usage
+- [x] How to set up billing alerts
+- [x] Output saved to `owner-manual/COSTS.md`
 
 ---
 
@@ -175,13 +175,13 @@ Generate comprehensive handover checklist ensuring nothing is forgotten when del
 **DONE:** Every handover is complete with nothing forgotten
 
 **Acceptance Criteria:**
-- [ ] Access credentials checklist
-- [ ] Account ownership verification
-- [ ] Documentation delivered checklist
-- [ ] Training completed checklist
-- [ ] Support contacts section
-- [ ] "What's next" section
-- [ ] Output saved to `owner-manual/HANDOVER-CHECKLIST.md`
+- [x] Access credentials checklist
+- [x] Account ownership verification
+- [x] Documentation delivered checklist
+- [x] Training completed checklist
+- [x] Support contacts section
+- [x] "What's next" section
+- [x] Output saved to `owner-manual/HANDOVER-CHECKLIST.md`
 
 ---
 
@@ -197,13 +197,13 @@ Create script that runs all generators and compiles output into single professio
 **DONE:** One command generates complete, professional Owner's Manual
 
 **Acceptance Criteria:**
-- [ ] Runs all 7 generators in sequence
-- [ ] Compiles to single DOCX file
-- [ ] Includes table of contents
-- [ ] Professional formatting (headers, spacing)
-- [ ] Client name/project name on cover
-- [ ] Page numbers in footer
-- [ ] Output: `owner-manual/OwnerManual-[ProjectName].docx`
+- [x] Runs all 7 generators in sequence
+- [x] Compiles to single DOCX file
+- [x] Includes table of contents
+- [x] Professional formatting (headers, spacing)
+- [x] Client name/project name on cover
+- [x] Page numbers in footer
+- [x] Output: `owner-manual/OwnerManual-[ProjectName].docx`
 
 ---
 

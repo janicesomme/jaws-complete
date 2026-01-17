@@ -1,0 +1,28 @@
+{
+  "name": "jaws-complete",
+  "version": "1.0.0",
+  "description": "> **J**ust **A**nother **W**orkflow **S**ystem - The Business AI Automation Builder",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janicesomme/jaws-complete.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/janicesomme/jaws-complete/issues"
+  },
+  "homepage": "https://github.com/janicesomme/jaws-complete#readme",
+  "dependencies": {
+    "docx": "^9.5.1"
+  }
+}
