@@ -1,9 +1,10 @@
 # [Project Name] - Product Requirements Document
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Created:** [Date]  
 **Last Updated:** [Date]  
-**Build ID:** US-301 through US-XXX
+**Build ID:** US-301 through US-XXX  
+**Has UI:** Yes / No ← RALPH uses this for automatic browser validation
 
 ---
 
@@ -68,6 +69,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-301: [Foundation Task Name]
 
+**TYPE:** Backend
 **DEPENDS ON:** None (this is the foundation)  
 **PARALLEL WITH:** None  
 **BLOCKS:** US-302, US-303, US-304
@@ -93,6 +95,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-302: [Feature A Name]
 
+**TYPE:** UI / Backend / Both ← RALPH auto-validates UI types with browser
 **DEPENDS ON:** US-301 (foundation must be complete)  
 **PARALLEL WITH:** US-303, US-304  
 **BLOCKS:** US-305
@@ -110,6 +113,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-303: [Feature B Name]
 
+**TYPE:** UI / Backend / Both
 **DEPENDS ON:** US-301 (foundation must be complete)  
 **PARALLEL WITH:** US-302, US-304  
 **BLOCKS:** US-305
@@ -127,6 +131,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-304: [Feature C Name]
 
+**TYPE:** UI / Backend / Both
 **DEPENDS ON:** US-301 (foundation must be complete)  
 **PARALLEL WITH:** US-302, US-303  
 **BLOCKS:** US-305
@@ -148,6 +153,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-305: [Integration Task Name]
 
+**TYPE:** Both
 **DEPENDS ON:** US-302, US-303, US-304 (all features must be complete)  
 **PARALLEL WITH:** None  
 **BLOCKS:** US-306
@@ -170,6 +176,7 @@ Quality gates requiring fresh-context verification:
 
 ### US-306: [Polish Task Name]
 
+**TYPE:** Backend
 **DEPENDS ON:** US-305 (integration must be complete)  
 **PARALLEL WITH:** None  
 **BLOCKS:** None (final task)
